@@ -1,0 +1,486 @@
+#!/bin/bash
+# Claude Code Multi-Provider Switcher
+# Usage: claude-switch <mode> [claude args...]
+# Modes: direct (d), copilot (c), ollama (o), status (s)
+# Version: 1.7.0 - Models update: Claude Sonnet/Opus 4.6, GPT-5.3-Codex, Grok Code Fast 1, Ollama 0.15.3
+
+set -euo pipefail
+
+# === Configuration ===
+LOG_FILE="${HOME}/.claude/claude-switch.log"
+LOG_DIR="${HOME}/.claude"
+
+# === Colors ===
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# === Global arrays for command building ===
+declare -a MCP_ARGS=()
+declare -a PROMPT_ARGS=()
+
+# === Logging ===
+_log() {
+  local level="$1" msg="$2"
+  local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+  mkdir -p "${LOG_DIR}"
+  echo "[${timestamp}] [${level}] ${msg}" >> "${LOG_FILE}"
+
+  case "${level}" in
+    ERROR) echo -e "${RED}ERROR: ${msg}${NC}" >&2 ;;
+    WARN)  echo -e "${ORANGE}WARN: ${msg}${NC}" >&2 ;;
+    INFO)  echo -e "${GREEN}${msg}${NC}" ;;
+  esac
+}
+
+# === Health Checks ===
+_check_port() {
+  local host="$1" port="$2" timeout="${3:-2}"
+  nc -z -w"${timeout}" "${host}" "${port}" 2>/dev/null
+}
+
+_check_copilot() {
+  if ! _check_port "localhost" "4141"; then
+    _log "ERROR" "copilot-api not running on :4141"
+    echo "  Start it with: copilot-api start"
+    return 1
+  fi
+  _log "INFO" "copilot-api health: OK"
+}
+
+_check_ollama() {
+  if ! _check_port "localhost" "11434"; then
+    _log "ERROR" "Ollama not running on :11434"
+    echo "  Start it with: ollama serve"
+    return 1
+  fi
+
+  # Vérifier que le modèle existe
+  local model="${OLLAMA_MODEL:-devstral-small-2}"
+  local model_base="${model%%:*}"  # Extract base name (e.g., "devstral-small-2" from "devstral-small-2:latest")
+  if ! ollama list 2>/dev/null | grep -qi "${model_base}"; then
+    _log "ERROR" "Model ${model} not found"
+    echo "  Pull it with: ollama pull ${model}"
+    echo "  Or set OLLAMA_MODEL to use a different model"
+    echo ""
+    echo "  Recommended models:"
+    echo "    devstral-small-2      Best agentic coding (68% SWE-bench)"
+    echo "    ibm/granite4:small-h  Long context, 70% less VRAM"
+    return 1
+  fi
+  _log "INFO" "Ollama health: OK (model: ${model})"
+}
+
+# === Session Tracking ===
+_session_start() {
+  local mode="$1"
+  export CLAUDE_SESSION_START=$(date +%s)
+  export CLAUDE_SESSION_MODE="${mode}"
+  _log "INFO" "Session started: mode=${mode} pid=$$ pwd=${PWD}"
+}
+
+_session_end() {
+  local exit_code="$1"
+  local duration=$(($(date +%s) - ${CLAUDE_SESSION_START:-0}))
+  local mins=$((duration / 60))
+  local secs=$((duration % 60))
+  _log "INFO" "Session ended: mode=${CLAUDE_SESSION_MODE} duration=${mins}m${secs}s exit=${exit_code}"
+}
+
+# === MCP Profile Management ===
+# Sets MCP_ARGS array (no eval needed)
+_set_mcp_args() {
+  local model="${1:-}"
+  local mcp_dir="${HOME}/.claude/mcp-profiles/generated"
+  local config_file=""
+
+  # Reset array
+  MCP_ARGS=()
+
+  # Determine which MCP profile to use based on model
+  case "${model}" in
+    gpt-*)    config_file="${mcp_dir}/gpt.json" ;;
+    gemini-*) config_file="${mcp_dir}/gemini.json" ;;
+    claude-*|*) return 0 ;;  # Claude uses default config
+  esac
+
+  # Check if profile exists
+  if [[ ! -f "${config_file}" ]]; then
+    _log "WARN" "MCP profile not found: ${config_file} (run ~/.claude/mcp-profiles/generate.sh)"
+    return 0
+  fi
+
+  # Validate JSON
+  if ! jq empty "${config_file}" 2>/dev/null; then
+    _log "ERROR" "Invalid MCP config: ${config_file}"
+    return 1
+  fi
+
+  # Set array elements (proper bash array, no eval needed)
+  MCP_ARGS=("--mcp-config" "${config_file}")
+  _log "INFO" "Using restricted MCP profile for ${model}"
+}
+
+# Sets PROMPT_ARGS array (no eval needed)
+_set_prompt_args() {
+  local model="${1:-}"
+  local prompts_dir="${HOME}/.claude/mcp-profiles/prompts"
+  local prompt_file=""
+
+  # Reset array
+  PROMPT_ARGS=()
+
+  # Determine which system prompt to use based on model
+  case "${model}" in
+    gpt-4.1*)     prompt_file="${prompts_dir}/gpt-4.1.txt" ;;
+    gpt-*-codex*) return 0 ;;  # Codex: no identity injection (has its own identity)
+    gpt-*)        prompt_file="${prompts_dir}/gpt-4.1.txt" ;;  # Fallback for other GPT
+    gemini-*)     prompt_file="${prompts_dir}/gemini.txt" ;;
+    claude-*|*)   return 0 ;;  # Claude uses default prompt
+  esac
+
+  # Check if prompt file exists
+  if [[ ! -f "${prompt_file}" ]]; then
+    _log "WARN" "System prompt not found: ${prompt_file}"
+    return 0
+  fi
+
+  # Read prompt content safely
+  local prompt_content
+  prompt_content=$(cat "${prompt_file}")
+
+  # Set array elements (proper bash array, handles newlines and special chars)
+  PROMPT_ARGS=("--append-system-prompt" "${prompt_content}")
+  _log "INFO" "Injecting model identity prompt for ${model}"
+}
+
+# === Ollama Context Check ===
+_check_ollama_context() {
+  local min_context=32768  # 32K minimum for Claude Code
+
+  # Check if OLLAMA_CONTEXT_LENGTH is defined
+  local current="${OLLAMA_CONTEXT_LENGTH:-4096}"
+
+  if [[ "$current" -lt "$min_context" ]]; then
+    _log "WARN" "Ollama context ($current) < recommended ($min_context) for Claude Code"
+    echo ""
+    echo -e "${ORANGE}⚠️  Context Warning: Ollama default context (${current}) is too low for Claude Code.${NC}"
+    echo "   Claude Code requires ~18K tokens for system prompt + tools alone."
+    echo ""
+    echo "   Recommended fix (persistent via Modelfile):"
+    echo "   1. Create file: ~/.ollama/Modelfile.devstral-64k"
+    echo "      FROM devstral-small-2"
+    echo "      PARAMETER num_ctx 65536"
+    echo "      PARAMETER temperature 0.15"
+    echo ""
+    echo "   2. Run: ollama create devstral-64k -f ~/.ollama/Modelfile.devstral-64k"
+    echo "   3. Use: OLLAMA_MODEL=devstral-64k cco"
+    echo ""
+    echo "   Quick fix (global, less priority):"
+    echo "   launchctl setenv OLLAMA_CONTEXT_LENGTH 65536 && brew services restart ollama"
+    echo ""
+  fi
+}
+
+# === Provider Functions ===
+_run_direct() {
+  _log "INFO" "Provider: Anthropic Direct"
+  echo -e "${BLUE}━━━ Claude Code [Anthropic Direct] ━━━${NC}"
+
+  unset ANTHROPIC_BASE_URL
+  unset DISABLE_NON_ESSENTIAL_MODEL_CALLS
+  unset CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+
+  _session_start "direct"
+  claude "$@"
+  local rc=$?
+  _session_end $rc
+  return $rc
+}
+
+_run_copilot() {
+  _check_copilot || return 1
+
+  # Allow model override via env var or use default
+  local model="${COPILOT_MODEL:-claude-sonnet-4-6}"
+
+  # Gemini workaround: auto-set subagent for preview models (issue #151)
+  # Gemini 3 preview models have unreliable tool calling → route through GPT subagent
+  if [[ "$model" == gemini-3-*-preview ]]; then
+    if [[ -z "${CLAUDE_CODE_SUBAGENT_MODEL:-}" ]]; then
+      export CLAUDE_CODE_SUBAGENT_MODEL="gpt-5-mini"
+      _log "INFO" "Gemini preview detected: auto-enabling subagent workaround (CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL})"
+    else
+      _log "INFO" "Gemini preview detected: using existing CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL}"
+    fi
+  fi
+
+  # Set MCP and prompt args arrays (no eval, proper bash arrays)
+  _set_mcp_args "${model}" || return 1
+  _set_prompt_args "${model}" || return 1
+
+  _log "INFO" "Provider: GitHub Copilot (via copilot-api) - Model: ${model}"
+  echo -e "${GREEN}━━━ Claude Code [GitHub Copilot: ${model}] ━━━${NC}"
+
+  export ANTHROPIC_BASE_URL="http://localhost:4141"
+  export ANTHROPIC_AUTH_TOKEN="<PLACEHOLDER>"  # copilot-api ignores this value
+  export ANTHROPIC_MODEL="${model}"
+  export ANTHROPIC_DEFAULT_HAIKU_MODEL="gpt-5-mini"
+  export DISABLE_NON_ESSENTIAL_MODEL_CALLS="1"
+  export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
+
+  _session_start "copilot:${model}"
+
+  # Execute claude with proper array expansion (no eval!)
+  # Arrays handle spaces, newlines, and special chars correctly
+  # Use ${array[@]+"${array[@]}"} to handle empty arrays with set -u
+  claude ${MCP_ARGS[@]+"${MCP_ARGS[@]}"} ${PROMPT_ARGS[@]+"${PROMPT_ARGS[@]}"} "$@"
+
+  local rc=$?
+  _session_end $rc
+  return $rc
+}
+
+_run_ollama() {
+  _check_ollama || return 1
+
+  # Allow model override via env var or use default
+  local model="${OLLAMA_MODEL:-devstral-small-2}"
+
+  # Check context configuration
+  _check_ollama_context
+
+  _log "INFO" "Provider: Ollama Local - Model: ${model}"
+  echo -e "${ORANGE}━━━ Claude Code [Ollama Local: ${model}] ━━━${NC}"
+
+  export ANTHROPIC_BASE_URL="http://localhost:11434"
+  export ANTHROPIC_AUTH_TOKEN="<PLACEHOLDER>"  # Ollama ignores this value
+  # Note: ANTHROPIC_API_KEY not set to avoid API key prompt
+  # Ollama authentication works through ANTHROPIC_BASE_URL only
+
+  _session_start "ollama:${model}"
+  claude --model "${model}" "$@"
+  local rc=$?
+  _session_end $rc
+  return $rc
+}
+
+_show_status() {
+  echo "=== Claude Code Provider Status ==="
+  echo ""
+
+  echo -n "Anthropic API:  "
+  if curl -s --max-time 2 https://api.anthropic.com/v1/messages -H "x-api-key: test" 2>/dev/null | grep -q "invalid"; then
+    echo -e "${GREEN}✓ Reachable${NC}"
+  else
+    echo -e "${ORANGE}? Unknown${NC}"
+  fi
+
+  echo -n "copilot-api:    "
+  if _check_port "localhost" "4141"; then
+    echo -e "${GREEN}✓ Running (:4141)${NC}"
+  else
+    echo -e "${RED}✗ Not running${NC}"
+  fi
+
+  echo -n "Ollama:         "
+  if _check_port "localhost" "11434"; then
+    local models=$(ollama list 2>/dev/null | grep -c ":" || echo "0")
+    echo -e "${GREEN}✓ Running (${models} models)${NC}"
+  else
+    echo -e "${RED}✗ Not running${NC}"
+  fi
+
+  echo ""
+  echo "=== Recent Sessions ==="
+  tail -5 "${LOG_FILE}" 2>/dev/null || echo "(no logs yet)"
+}
+
+_show_usage() {
+  cat << 'EOF'
+Claude Code Multi-Provider Switcher v1.7.0
+
+Usage: claude-switch <mode> [claude args...]
+
+Modes:
+  d, direct   Anthropic API direct (best quality, paid)
+  c, copilot  GitHub Copilot via copilot-api (free with subscription)
+  o, ollama   Local models via Ollama (private, offline)
+  s, status   Check all providers status
+  -h, --help  Show this help message
+
+Basic Examples:
+  claude-switch direct              # Use Anthropic API
+  claude-switch copilot             # Use GitHub Copilot
+  claude-switch ollama              # Use local Ollama
+  claude-switch copilot -c          # Copilot + resume session
+  claude-switch status              # Check what's running
+
+Provider Aliases (recommended):
+  alias ccd='claude-switch direct'
+  alias ccc='claude-switch copilot'
+  alias cco='claude-switch ollama'
+  alias ccs='claude-switch status'
+
+Dynamic Model Selection:
+  # Switch Copilot models via environment variable
+  COPILOT_MODEL=claude-opus-4-6 claude-switch copilot
+  COPILOT_MODEL=claude-sonnet-4-6 claude-switch copilot
+  COPILOT_MODEL=claude-haiku-4.5 claude-switch copilot
+  COPILOT_MODEL=gpt-4.1 claude-switch copilot
+
+  # Switch Ollama models via environment variable
+  OLLAMA_MODEL=devstral-64k claude-switch ollama
+  OLLAMA_MODEL=ibm/granite4:small-h claude-switch ollama
+
+Model Aliases (for Copilot):
+  alias ccc-opus='COPILOT_MODEL=claude-opus-4-6 claude-switch copilot'
+  alias ccc-sonnet='COPILOT_MODEL=claude-sonnet-4-6 claude-switch copilot'
+  alias ccc-haiku='COPILOT_MODEL=claude-haiku-4.5 claude-switch copilot'
+  alias ccc-opus46='COPILOT_MODEL=claude-opus-4-6 claude-switch copilot'
+  alias ccc-sonnet46='COPILOT_MODEL=claude-sonnet-4-6 claude-switch copilot'
+  alias ccc-gpt='COPILOT_MODEL=gpt-4.1 claude-switch copilot'
+  alias ccc-gpt5='COPILOT_MODEL=gpt-5.4 claude-switch copilot'
+  alias ccc-gpt54='COPILOT_MODEL=gpt-5.4 claude-switch copilot'
+  alias ccc-gpt51='COPILOT_MODEL=gpt-5.1 claude-switch copilot'
+  alias ccc-gpt52='COPILOT_MODEL=gpt-5.2 claude-switch copilot'
+  alias ccc-gpt53-codex='COPILOT_MODEL=gpt-5.3-codex claude-switch copilot'
+  alias ccc-grok='COPILOT_MODEL=grok-code-fast-1 claude-switch copilot'
+  alias ccc-gemini='COPILOT_MODEL=gemini-2.5-pro claude-switch copilot'  # ⚠️ may be deprecated
+  alias ccc-gemini3='COPILOT_MODEL=gemini-3-flash-preview claude-switch copilot'
+  alias ccc-gemini3-pro='COPILOT_MODEL=gemini-3-pro-preview claude-switch copilot'
+  alias ccc-gemini31='COPILOT_MODEL=gemini-3.1-pro-preview claude-switch copilot'
+  alias ccc-opus-fast='COPILOT_MODEL=claude-opus-4.6-fast claude-switch copilot'
+
+  # Semantic shortcuts
+  alias ccc-prod='COPILOT_MODEL=claude-opus-4-6 claude-switch copilot'
+  alias ccc-dev='COPILOT_MODEL=claude-sonnet-4-6 claude-switch copilot'
+  alias ccc-quick='COPILOT_MODEL=claude-haiku-4.5 claude-switch copilot'
+  alias ccc-alt='COPILOT_MODEL=gpt-4.1 claude-switch copilot'
+
+Model Aliases (for Ollama):
+  alias cco-devstral='OLLAMA_MODEL=devstral-small-2 claude-switch ollama'
+  alias cco-granite='OLLAMA_MODEL=ibm/granite4:small-h claude-switch ollama'
+  alias ccc-private='OLLAMA_MODEL=devstral-small-2 claude-switch ollama'
+
+Available Models (via Copilot):
+  Claude:  opus-4-6 ★, sonnet-4-6 ★, haiku-4.5, opus-4.6-fast (new)
+  GPT:     4.1 (0x), 5.1, 5.2, 5.4 ★ (xhigh reasoning), 5-mini (0x)
+  Codex:   gpt-5.3-codex (0x, via unified fork)
+  Gemini:  3.1-pro-preview (new), 3-flash-preview, 3-pro-preview, 2.5-pro ⚠️
+  Grok:    grok-code-fast-1 (0.25x, speed)
+
+Available Models (via Ollama - recommended):
+  devstral-small-2      Best agentic coding (68% SWE-bench, 24B)
+  ibm/granite4:small-h  Long context, 70% less VRAM (9B active)
+  qwen3-coder:30b       Highest accuracy, needs template work
+
+Ollama Context Setup:
+  IMPORTANT: Create a 64K Modelfile for best results with Claude Code
+  See: https://docs.ollama.com/context-length
+
+MCP Profiles & System Prompts:
+  Auto-detection of problematic MCP servers for strict models (GPT-4.1, Gemini)
+  System prompts injection for correct model identity
+  ~/.claude/mcp-profiles/generate.sh   # Generate MCP profiles
+  ~/.claude/mcp-profiles/excludes.yaml # Edit MCP server exclusions
+  ~/.claude/mcp-profiles/prompts/      # Custom model identity prompts
+
+Logs:
+  ~/.claude/claude-switch.log   # Session logs
+
+GitHub: https://github.com/FlorianBruniaux/cc-copilot-bridge
+EOF
+}
+
+# === Shell Config Generator ===
+_print_shell_config() {
+  cat << 'EOF'
+# Claude Code Multi-Provider Shell Configuration
+# Generated by: claude-switch --shell-config
+# Version: 1.7.0 (2026-02-18)
+#
+# Usage:
+#   source <(claude-switch --shell-config)
+#
+# Or add to ~/.zshrc:
+#   eval "$(claude-switch --shell-config)"
+
+# Core Commands
+alias ccd='claude-switch direct'
+alias ccc='claude-switch copilot'
+alias cco='claude-switch ollama'
+alias ccs='claude-switch status'
+
+# Claude Models via Copilot (updated to 4.6)
+alias ccc-opus='COPILOT_MODEL=claude-opus-4-6 claude-switch copilot'
+alias ccc-sonnet='COPILOT_MODEL=claude-sonnet-4-6 claude-switch copilot'
+alias ccc-haiku='COPILOT_MODEL=claude-haiku-4.5 claude-switch copilot'
+# Explicit 4.6 aliases
+alias ccc-opus46='COPILOT_MODEL=claude-opus-4-6 claude-switch copilot'
+alias ccc-sonnet46='COPILOT_MODEL=claude-sonnet-4-6 claude-switch copilot'
+alias ccc-opus-fast='COPILOT_MODEL=claude-opus-4.6-fast claude-switch copilot'  # Opus rapide
+
+# GPT Models via Copilot
+alias ccc-gpt='COPILOT_MODEL=gpt-4.1 claude-switch copilot'
+alias ccc-gpt41='COPILOT_MODEL=gpt-4.1 claude-switch copilot'
+alias ccc-gpt5='COPILOT_MODEL=gpt-5.4 claude-switch copilot'           # Top GPT, xhigh reasoning
+alias ccc-gpt54='COPILOT_MODEL=gpt-5.4 claude-switch copilot'          # Top GPT, xhigh reasoning
+alias ccc-gpt51='COPILOT_MODEL=gpt-5.1 claude-switch copilot'          # GPT 5.1 standard
+alias ccc-gpt52='COPILOT_MODEL=gpt-5.2 claude-switch copilot'
+alias ccc-gpt5-mini='COPILOT_MODEL=gpt-5-mini claude-switch copilot'
+alias ccc-grok='COPILOT_MODEL=grok-code-fast-1 claude-switch copilot'
+
+# Gemini Models via Copilot
+alias ccc-gemini='COPILOT_MODEL=gemini-2.5-pro claude-switch copilot'  # ⚠️ potentially deprecated
+alias ccc-gemini3='COPILOT_MODEL=gemini-3-flash-preview claude-switch copilot'
+alias ccc-gemini3-pro='COPILOT_MODEL=gemini-3-pro-preview claude-switch copilot'
+alias ccc-gemini31='COPILOT_MODEL=gemini-3.1-pro-preview claude-switch copilot'  # Gemini 3.1 Pro
+
+# Ollama Local Models
+alias cco-devstral='OLLAMA_MODEL=devstral-small-2 claude-switch ollama'
+alias cco-granite='OLLAMA_MODEL=ibm/granite4:small-h claude-switch ollama'
+
+# Unified Fork (Codex /responses endpoint + Gemini 3 thinking)
+# Run ccunified in a separate terminal first, then use these
+alias ccunified='~/Sites/perso/cc-copilot-bridge/scripts/launch-unified-fork.sh 2>/dev/null || echo "Unified fork not found at ~/Sites/perso/cc-copilot-bridge/scripts/launch-unified-fork.sh"'
+alias ccc-codex='COPILOT_MODEL=gpt-5.3-codex claude-switch copilot'
+alias ccc-codex-std='COPILOT_MODEL=gpt-5.2-codex claude-switch copilot'
+alias ccc-codex-mini='COPILOT_MODEL=gpt-5.1-codex-mini claude-switch copilot'
+alias ccc-codex-max='COPILOT_MODEL=gpt-5.1-codex-max claude-switch copilot'
+alias ccc-gpt53-codex='COPILOT_MODEL=gpt-5.3-codex claude-switch copilot'
+
+# Semantic Shortcuts (use-case based)
+alias ccc-prod='COPILOT_MODEL=claude-opus-4-6 claude-switch copilot'      # Production code
+alias ccc-dev='COPILOT_MODEL=claude-sonnet-4-6 claude-switch copilot'     # Daily development
+alias ccc-quick='COPILOT_MODEL=claude-haiku-4.5 claude-switch copilot'    # Quick questions
+alias ccc-code='COPILOT_MODEL=gpt-5.3-codex claude-switch copilot'        # Code generation (requires ccunified)
+alias ccc-alt='COPILOT_MODEL=gpt-4.1 claude-switch copilot'               # Alternative perspective (free)
+alias ccc-private='OLLAMA_MODEL=devstral-small-2 claude-switch ollama'    # Offline/private
+EOF
+}
+
+# === Main ===
+main() {
+  local mode="${1:-}"
+  shift 2>/dev/null || true
+
+  case "${mode}" in
+    d|direct)  _run_direct "$@" ;;
+    c|copilot) _run_copilot "$@" ;;
+    o|ollama)  _run_ollama "$@" ;;
+    s|status)  _show_status ;;
+    --shell-config) _print_shell_config ;;
+    -v|--version) echo "claude-switch v1.7.0" ;;
+    -h|--help|"") _show_usage ;;
+    *)
+      _log "ERROR" "Unknown mode: ${mode}"
+      _show_usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

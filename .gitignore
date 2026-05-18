@@ -1,0 +1,51 @@
+# Session logs
+.claude/claude-switch.log
+.claude/logs/
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-*
+
+# Test output
+test-results/
+debug.sh
+temp*.sh
+
+# Generated MCP profiles (auto-generated, do not commit)
+.claude/mcp-profiles/generated/
+
+# User-specific configs
+.env
+.env.local
+
+.serena
+
+claudedocs/
+
+# Personal files
+REPONSE-FLORIAN.md
+
+# Debug output (temporary analysis)
+debug-*/
+copilot-api-responses/
+debug-responses-api/
+
+# Deploy keys (sensitive)
+tap_deploy_key
+tap_deploy_key.pub
+*_deploy_key*
+
+# Vitals provenance data
+.vitals/

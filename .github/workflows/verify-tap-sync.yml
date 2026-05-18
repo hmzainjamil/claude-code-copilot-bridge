@@ -1,0 +1,43 @@
+name: Verify Tap Sync
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Daily at 8 AM UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check sync status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get latest release version
+          LATEST=$(gh release view --repo FlorianBruniaux/cc-copilot-bridge --json tagName -q .tagName 2>/dev/null || echo "")
+
+          if [[ -z "$LATEST" ]]; then
+            echo "No releases found yet"
+            exit 0
+          fi
+
+          LATEST_VERSION="${LATEST#v}"
+
+          # Get tap formula version
+          TAP_VERSION=$(curl -sf https://raw.githubusercontent.com/FlorianBruniaux/homebrew-tap/main/Formula/cc-copilot-bridge.rb | grep 'version "' | head -1 | cut -d'"' -f2 || echo "")
+
+          echo "Latest release: $LATEST_VERSION"
+          echo "Tap version: $TAP_VERSION"
+
+          if [[ -z "$TAP_VERSION" ]]; then
+            echo "::error::Formula not found in tap repository"
+            exit 1
+          fi
+
+          if [[ "$LATEST_VERSION" != "$TAP_VERSION" ]]; then
+            echo "::error::Homebrew tap is OUT OF SYNC!"
+            echo "::error::Release: $LATEST_VERSION, Tap: $TAP_VERSION"
+            exit 1
+          fi
+
+          echo "✅ Tap is in sync with latest release"

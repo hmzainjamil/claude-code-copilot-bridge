@@ -1,0 +1,236 @@
+name: Build Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-packages:
+    name: Build Distribution Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="dev-$(git rev-parse --short HEAD)"
+          fi
+          # RPM doesn't allow hyphens in version, replace with tilde
+          RPM_VERSION="${VERSION//-/\~}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "RPM_VERSION=${RPM_VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION} (RPM: ${RPM_VERSION})"
+
+      - name: Create Release Tarball
+        id: tarball
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          TARBALL_NAME="cc-copilot-bridge-${VERSION}.tar.gz"
+
+          # Create clean tarball with only needed files
+          mkdir -p release-staging/cc-copilot-bridge-${VERSION}
+          cp claude-switch release-staging/cc-copilot-bridge-${VERSION}/
+          cp README.md QUICKSTART.md release-staging/cc-copilot-bridge-${VERSION}/
+          cp -r docs release-staging/cc-copilot-bridge-${VERSION}/
+
+          cd release-staging
+          tar czf ../${TARBALL_NAME} cc-copilot-bridge-${VERSION}
+          cd ..
+
+          # Compute SHA256 from this EXACT file
+          SHA256=$(sha256sum ${TARBALL_NAME} | awk '{print $1}')
+          echo "SHA256=${SHA256}" >> $GITHUB_OUTPUT
+          echo "TARBALL=${TARBALL_NAME}" >> $GITHUB_OUTPUT
+          echo "Created tarball: ${TARBALL_NAME}"
+          echo "SHA256: ${SHA256}"
+
+      - name: Update Homebrew Formula
+        run: |
+          # Update URL to point to release asset (handles both old and new URL formats)
+          sed -i 's|url "https://github.com/FlorianBruniaux/cc-copilot-bridge/[^"]*"|url "https://github.com/FlorianBruniaux/cc-copilot-bridge/releases/download/${{ github.ref_name }}/${{ steps.tarball.outputs.TARBALL }}"|g' Formula/cc-copilot-bridge.rb
+          # Update SHA256
+          sed -i "s/sha256 \".*\"/sha256 \"${{ steps.tarball.outputs.SHA256 }}\"/g" Formula/cc-copilot-bridge.rb
+          # Update version
+          sed -i "s/version \".*\"/version \"${{ steps.version.outputs.VERSION }}\"/g" Formula/cc-copilot-bridge.rb
+          cat Formula/cc-copilot-bridge.rb
+
+      - name: Build DEB Package
+        run: |
+          mkdir -p deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/DEBIAN
+          mkdir -p deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/usr/local/bin
+          mkdir -p deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/usr/share/doc/claude-switch
+
+          # Copy binary
+          cp claude-switch deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/usr/local/bin/
+          chmod +x deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/usr/local/bin/claude-switch
+
+          # Copy docs
+          cp README.md QUICKSTART.md deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/usr/share/doc/claude-switch/
+          cp -r docs deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/usr/share/doc/claude-switch/
+
+          # Create control file
+          cat > deb-build/claude-switch_${{ steps.version.outputs.VERSION }}/DEBIAN/control << EOF
+          Package: claude-switch
+          Version: ${{ steps.version.outputs.VERSION }}
+          Section: utils
+          Priority: optional
+          Architecture: all
+          Depends: netcat
+          Maintainer: Florian Bruniaux <florian@example.com>
+          Description: Multi-provider switcher for Claude Code CLI
+           Seamlessly switch between Anthropic Direct, GitHub Copilot,
+           and Ollama local providers for Claude Code CLI.
+          Homepage: https://github.com/FlorianBruniaux/cc-copilot-bridge
+          EOF
+
+          # Build package
+          dpkg-deb --build deb-build/claude-switch_${{ steps.version.outputs.VERSION }}
+          mv deb-build/claude-switch_${{ steps.version.outputs.VERSION }}.deb .
+
+      - name: Build RPM Package
+        run: |
+          sudo apt-get update && sudo apt-get install -y rpm
+
+          mkdir -p rpm-build/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+          RPM_VERSION="${{ steps.version.outputs.RPM_VERSION }}"
+
+          # Create spec file
+          cat > rpm-build/SPECS/claude-switch.spec << EOF
+          Name:           claude-switch
+          Version:        ${RPM_VERSION}
+          Release:        1%{?dist}
+          Summary:        Multi-provider switcher for Claude Code CLI
+          License:        MIT
+          URL:            https://github.com/FlorianBruniaux/cc-copilot-bridge
+          Source0:        %{name}-%{version}.tar.gz
+
+          Requires:       nmap-ncat
+
+          %description
+          Seamlessly switch between Anthropic Direct, GitHub Copilot,
+          and Ollama local providers for Claude Code CLI.
+
+          %prep
+          %setup -q
+
+          %build
+          # Nothing to build
+
+          %install
+          mkdir -p %{buildroot}%{_bindir}
+          install -m 755 claude-switch %{buildroot}%{_bindir}/claude-switch
+
+          mkdir -p %{buildroot}%{_docdir}/%{name}
+          cp README.md QUICKSTART.md %{buildroot}%{_docdir}/%{name}/
+          cp -r docs %{buildroot}%{_docdir}/%{name}/
+
+          %files
+          %{_bindir}/claude-switch
+          %doc %{_docdir}/%{name}
+
+          %changelog
+          * $(date "+%a %b %d %Y") Florian Bruniaux <florian@example.com> - ${RPM_VERSION}-1
+          - Automated build via GitHub Actions
+          EOF
+
+          # Create source tarball
+          tar czf rpm-build/SOURCES/claude-switch-${RPM_VERSION}.tar.gz \
+            --transform "s,^,claude-switch-${RPM_VERSION}/," \
+            claude-switch README.md QUICKSTART.md docs
+
+          # Build RPM
+          rpmbuild --define "_topdir $(pwd)/rpm-build" -ba rpm-build/SPECS/claude-switch.spec
+          cp rpm-build/RPMS/*/claude-switch-*.rpm .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            ${{ steps.tarball.outputs.TARBALL }}
+            claude-switch_*.deb
+            claude-switch-*.rpm
+            Formula/cc-copilot-bridge.rb
+          body: |
+            ## Installation
+
+            ### Homebrew (macOS/Linux)
+            ```bash
+            brew tap FlorianBruniaux/tap
+            brew install cc-copilot-bridge
+            eval "$(claude-switch --shell-config)"
+            ```
+
+            ### Debian/Ubuntu (.deb)
+            ```bash
+            wget https://github.com/FlorianBruniaux/cc-copilot-bridge/releases/download/${{ github.ref_name }}/claude-switch_${{ steps.version.outputs.VERSION }}.deb
+            sudo dpkg -i claude-switch_${{ steps.version.outputs.VERSION }}.deb
+            eval "$(claude-switch --shell-config)"
+            ```
+
+            ### RHEL/Fedora (.rpm)
+            ```bash
+            wget https://github.com/FlorianBruniaux/cc-copilot-bridge/releases/download/${{ github.ref_name }}/claude-switch-${{ steps.version.outputs.VERSION }}-1.*.rpm
+            sudo rpm -i claude-switch-${{ steps.version.outputs.VERSION }}-1.*.rpm
+            eval "$(claude-switch --shell-config)"
+            ```
+
+            ### Manual Installation
+            ```bash
+            wget https://github.com/FlorianBruniaux/cc-copilot-bridge/archive/refs/tags/${{ github.ref_name }}.tar.gz
+            tar xzf ${{ github.ref_name }}.tar.gz
+            cd cc-copilot-bridge-*
+            sudo install -m 755 claude-switch /usr/local/bin/
+            eval "$(claude-switch --shell-config)"
+            ```
+
+            ## Documentation
+            - [Quick Start](https://github.com/FlorianBruniaux/cc-copilot-bridge/blob/main/QUICKSTART.md)
+            - [Install Options](https://github.com/FlorianBruniaux/cc-copilot-bridge/blob/main/docs/INSTALL-OPTIONS.md)
+            - [Full README](https://github.com/FlorianBruniaux/cc-copilot-bridge/blob/main/README.md)
+
+      - name: Commit updated Formula
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add Formula/cc-copilot-bridge.rb
+          git commit -m "Update Homebrew formula SHA256 for ${{ github.ref_name }}" || echo "No changes to commit"
+          git push origin HEAD:main || echo "Nothing to push"
+
+      - name: Sync to Homebrew Tap
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$TAP_DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+          # Clone tap repo
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key" git clone git@github.com:FlorianBruniaux/homebrew-tap.git /tmp/tap
+          cd /tmp/tap
+
+          # Update formula
+          mkdir -p Formula
+          cp $GITHUB_WORKSPACE/Formula/cc-copilot-bridge.rb Formula/
+
+          # Commit and push
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add Formula/
+          git commit -m "Update cc-copilot-bridge to ${{ github.ref_name }}" || echo "No changes"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key" git push
