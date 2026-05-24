@@ -4,15 +4,21 @@
 
 > 📖 **New to Claude Code?** Check out the [Claude Code Ultimate Guide](https://cc.bruniaux.com/) for comprehensive documentation, tips, and best practices.
 
+<p align="center">
+  <a href="https://github.com/hmzainjamil/claude-code-copilot-bridge/stargazers"><img src="https://img.shields.io/github/stars/hmzainjamil/claude-code-copilot-bridge?style=for-the-badge&labelColor=555&color=white" alt="Stars"></a>
+  <a href="https://github.com/hmzainjamil/claude-code-copilot-bridge/network/members"><img src="https://img.shields.io/github/forks/hmzainjamil/claude-code-copilot-bridge?style=for-the-badge&labelColor=555&color=white" alt="Forks"></a>
+  <a href="https://github.com/hmzainjamil/claude-code-copilot-bridge/issues"><img src="https://img.shields.io/github/issues/hmzainjamil/claude-code-copilot-bridge?style=for-the-badge&labelColor=555&color=white" alt="Issues"></a>
+  <a href="https://github.com/hmzainjamil/claude-code-copilot-bridge/pulls"><img src="https://img.shields.io/github/issues-pr/hmzainjamil/claude-code-copilot-bridge?style=for-the-badge&labelColor=555&color=white" alt="PRs"></a>
+  <a href="https://github.com/hmzainjamil/claude-code-copilot-bridge/commits"><img src="https://img.shields.io/github/last-commit/hmzainjamil/claude-code-copilot-bridge?style=for-the-badge&labelColor=555&color=white" alt="Last Commit"></a>
+</p>
+
 <div align="center">
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/github/v/tag/FlorianBruniaux/cc-copilot-bridge?label=version)](https://github.com/FlorianBruniaux/cc-copilot-bridge/releases)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-blue.svg)]()
-[![Shell](https://img.shields.io/badge/Shell-Bash-green.svg)](https://www.gnu.org/software/bash/)
-[![GitHub Stars](https://img.shields.io/github/stars/FlorianBruniaux/cc-copilot-bridge?style=social)](https://github.com/FlorianBruniaux/cc-copilot-bridge/stargazers)
-[![GitHub Issues](https://img.shields.io/github/issues/FlorianBruniaux/cc-copilot-bridge)](https://github.com/FlorianBruniaux/cc-copilot-bridge/issues)
-[![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&labelColor=555)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/github/v/tag/FlorianBruniaux/cc-copilot-bridge?label=version&style=for-the-badge&labelColor=555)](https://github.com/FlorianBruniaux/cc-copilot-bridge/releases)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-blue.svg?style=for-the-badge&labelColor=555)]()
+[![Shell](https://img.shields.io/badge/Shell-Bash-green.svg?style=for-the-badge&labelColor=555)](https://www.gnu.org/software/bash/)
+[![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=for-the-badge&labelColor=555)](CONTRIBUTING.md)
 [![Portfolio](https://img.shields.io/badge/Portfolio-florian.bruniaux.com-blue?style=flat-square)](https://florian.bruniaux.com/)
 
 **Multi-provider routing for Claude Code CLI**
@@ -671,3 +677,30 @@ MIT
 - **[copilot-api](https://github.com/ericc-ch/copilot-api)** - GitHub Copilot API proxy (core dependency)
 - **[Ollama](https://ollama.ai/)** - Local AI inference platform
 - **awesome-claude-code** - Curated list of Claude Code resources
+
+---
+
+## ☠️ STARTUPS / BUSINESSES
+
+Using this as infrastructure for a dev product or team?
+
+| Scenario | Value |
+|----------|-------|
+| **Solo SaaS founders** | Use Copilot subscription (included in GitHub team plan) — $0 extra AI cost |
+| **Dev agencies** | Route junior devs through Ollama locally, senior work through Claude Direct |
+| **Bootstrapped startups** | Cut Claude API bills 60-80% by routing non-critical tasks to Copilot |
+| **Enterprise security teams** | Ollama mode keeps all code on-prem, zero data sent to cloud |
+| **Freelance consultants** | Switch providers per client billing — one tool, multiple backends |
+| **Dev tool companies** | Embed routing logic in your own CLI toolchain |
+
+> ⚠️ GitHub Copilot use with Claude Code is unofficial. Rate limits apply. Confirm ToS compliance with your legal team.
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=hmzainjamil/claude-code-copilot-bridge&type=Date)](https://star-history.com/#hmzainjamil/claude-code-copilot-bridge&Date)
+
+---
+
+Built by [HMZ](https://github.com/hmzainjamil)
