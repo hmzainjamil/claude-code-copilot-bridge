@@ -31,6 +31,41 @@ Use your existing GitHub Copilot subscription with Claude Code, or run 100% offl
 
 ---
 
+## CONCEPTS
+
+| Concept | Description |
+|---|---|
+| **Provider Router** | Bash script routing `claude` CLI to Anthropic Direct, GitHub Copilot proxy, or Ollama |
+| **ccd** | Alias for Anthropic Direct API — pay-per-token, max quality |
+| **ccc** | Alias for GitHub Copilot via `copilot-api` proxy — uses your existing Copilot subscription |
+| **cco** | Alias for Ollama local — 100% offline, free, no data leaves machine |
+| **copilot-api proxy** | Node.js reverse proxy that translates OpenAI-format requests to GitHub Copilot endpoints |
+| **Model Fallback** | Automatic fallback chain when primary provider rate-limits or errors |
+| **BYOK** | Bring Your Own Key — each provider uses its own auth token, never shared |
+
+## 🔥 Hot Commands
+
+```bash
+# Install the bridge (one-time)
+curl -fsSL https://raw.githubusercontent.com/FlorianBruniaux/cc-copilot-bridge/main/install.sh | bash
+
+# Switch to GitHub Copilot backend (free tier)
+ccc "refactor this function for readability"
+
+# Switch to Ollama local (offline, zero cost)
+cco "explain this code"
+
+# Switch to Anthropic Direct (production quality)
+ccd "write unit tests for auth module"
+
+# Check which backend is active
+echo $ANTHROPIC_BASE_URL
+```
+
+## ■ tip
+> `ccc` uses your GitHub Copilot quota (300 premium req/day on Pro+) — ideal for daily dev work. Save `ccd` for complex architecture tasks. Source: [Pricing & Limits](https://github.com/FlorianBruniaux/cc-copilot-bridge#-github-copilot-pricing--limits)
+
+
 ## StarMapper
 
 <a href="https://starmapper.bruniaux.com/FlorianBruniaux/cc-copilot-bridge">
@@ -704,3 +739,4 @@ Using this as infrastructure for a dev product or team?
 ---
 
 Built by [HMZ](https://github.com/hmzainjamil)
+
