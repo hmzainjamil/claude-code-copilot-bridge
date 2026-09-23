@@ -1,5 +1,9 @@
 # claude-code-copilot-bridge
 
+<!-- HMZ PORTFOLIO STANDARD -->
+> Portfolio status: active · Visibility: public · Source of truth: current repository source.
+<!-- END HMZ PORTFOLIO STANDARD -->
+
 > **Use GitHub Copilot's models from inside Claude Code — zero extra subscription cost** — A bridge that pipes Copilot's GPT-4 / Claude / Gemini access through Claude Code as if they were local models. If you pay $10/mo for Copilot, you already have multi-LLM access.
 
 <p align="center">
