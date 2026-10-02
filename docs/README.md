@@ -67,7 +67,7 @@ Complete documentation index for cc-copilot-bridge - Bridge GitHub Copilot to Cl
 ### Team & Enterprise
 - [Team Adoption](workflows/TEAM-ADOPTION.md) - Onboarding guide
 - [Security & Privacy](SECURITY.md) - Data flow and privacy implications
-- [CI/CD Integration](workflows/CI-CD.md) - Automated workflows
+- [GitHub Actions workflows](../.github/workflows/) - Build, release, security scan, and Homebrew sync
 
 ---
 
