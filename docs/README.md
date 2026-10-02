@@ -100,7 +100,6 @@ Complete documentation index for cc-copilot-bridge - Bridge GitHub Copilot to Cl
 | [Commands](COMMANDS.md) | Reference | Complete command documentation |
 | [FAQ](FAQ.md) | Q&A | 30+ common questions answered |
 | [Decision Trees](DECISION-TREES.md) | Visual Guide | Choose the right command/model |
-| [Comparison](COMPARISON.md) | Analysis | cc-copilot-bridge vs alternatives |
 
 ---
 
@@ -214,7 +213,6 @@ cc-copilot-bridge/
     │   ├── ARCHITECTURE.md ·· Internal workings
     │   ├── OPTIMISATION-M4-PRO.md Apple Silicon tuning
     │   ├── SECURITY.md ······ Privacy & data flow
-    │   ├── COMPARISON.md ···· vs alternatives
     │   └── ROADMAP.md ······· Future plans and ideas
     │
     ├── Community
