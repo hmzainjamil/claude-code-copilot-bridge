@@ -260,3 +260,13 @@ All documentation follows these standards:
 ---
 
 **Back to**: [Main README](../README.md) | [Quick Start](../QUICKSTART.md) | [GitHub Repository](https://github.com/FlorianBruniaux/cc-copilot-bridge)
+
+
+## README file inventory
+
+| File | Role |
+|---|---|
+| [Root README](../README.md) | Project overview and operating boundaries |
+| [Formula README](../Formula/README.md) | Homebrew formula notes |
+| [Scripts README](../scripts/README.md) | Script inventory |
+| [Security scripts README](../scripts/security/README.md) | Security-script documentation |
