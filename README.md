@@ -4,6 +4,8 @@
 
 This repository is an integration project. Review its scripts, dependencies, third-party services, and applicable provider terms before use. Model availability and subscription terms change over time; this README makes no cost or entitlement promise.
 
+See the [documentation index](docs/README.md) for the repository guide map.
+
 ## Modes
 
 | Mode | Behavior | Local service |
