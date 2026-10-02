@@ -67,7 +67,7 @@ Complete documentation index for cc-copilot-bridge - Bridge GitHub Copilot to Cl
 ### Team & Enterprise
 - [Team Adoption](workflows/TEAM-ADOPTION.md) - Onboarding guide
 - [Security & Privacy](SECURITY.md) - Data flow and privacy implications
-- [CI/CD Integration](workflows/CI-CD.md) - Automated workflows
+- [GitHub Actions workflows](../.github/workflows/) - Build, release, security scan, and Homebrew sync
 
 ---
 
@@ -100,7 +100,6 @@ Complete documentation index for cc-copilot-bridge - Bridge GitHub Copilot to Cl
 | [Commands](COMMANDS.md) | Reference | Complete command documentation |
 | [FAQ](FAQ.md) | Q&A | 30+ common questions answered |
 | [Decision Trees](DECISION-TREES.md) | Visual Guide | Choose the right command/model |
-| [Comparison](COMPARISON.md) | Analysis | cc-copilot-bridge vs alternatives |
 
 ---
 
@@ -214,7 +213,6 @@ cc-copilot-bridge/
     │   ├── ARCHITECTURE.md ·· Internal workings
     │   ├── OPTIMISATION-M4-PRO.md Apple Silicon tuning
     │   ├── SECURITY.md ······ Privacy & data flow
-    │   ├── COMPARISON.md ···· vs alternatives
     │   └── ROADMAP.md ······· Future plans and ideas
     │
     ├── Community
@@ -260,3 +258,13 @@ All documentation follows these standards:
 ---
 
 **Back to**: [Main README](../README.md) | [Quick Start](../QUICKSTART.md) | [GitHub Repository](https://github.com/FlorianBruniaux/cc-copilot-bridge)
+
+
+## README file inventory
+
+| File | Role |
+|---|---|
+| [Root README](../README.md) | Project overview and operating boundaries |
+| [Formula README](../Formula/README.md) | Homebrew formula notes |
+| [Scripts README](../scripts/README.md) | Script inventory |
+| [Security scripts README](../scripts/security/README.md) | Security-script documentation |

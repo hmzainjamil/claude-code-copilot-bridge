@@ -1,205 +1,27 @@
 # Security Policy
 
-## Supported Versions
+## Scope and versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.5.x   | :white_check_mark: |
-| < 1.5   | :x:                |
+This repository provides a shell wrapper, installer, and Homebrew formula for launching Claude Code through Anthropic direct, a localhost `copilot-api` service, or Ollama. No version-support schedule has been independently verified here. Check the repository's current release and source before upgrading.
 
-## Security Considerations
+## Security behavior visible in source
 
-### API Keys & Credentials
+The `claude-switch` script appends session metadata to `~/.claude/claude-switch.log`, including timestamp, mode, process ID, working directory, provider/model, duration, and exit code. Protect or remove this log if its operational details are sensitive.
 
-**cc-copilot-bridge does NOT store or transmit credentials.** It routes requests to:
+The Copilot and Ollama modes set Claude Code's Anthropic-compatible base URL to a local port. The external service behind that port controls onward routing and data handling. Do not assume localhost means prompts remain on the machine.
 
-1. **Anthropic Direct**: Uses `ANTHROPIC_API_KEY` from your environment
-2. **GitHub Copilot**: Uses `copilot-api` which handles GitHub OAuth locally
-3. **Ollama**: Local inference, no credentials needed
+The installer can place a script under `~/bin`, create alias files, and ask to edit shell startup files. Review it before execution. The Homebrew formula installs a script and documentation and declares dependencies.
 
-**Your credentials never pass through cc-copilot-bridge scripts.**
+## Safe use
 
-### Data Privacy
+- Review scripts and formula before installation or upgrades.
+- Keep OAuth state, provider credentials, code, prompts, and logs private.
+- Verify the identity, source, and behavior of any local proxy before sending sensitive data.
+- Check current provider terms and model availability; these can change.
+- Do not rely on unsupported claims of zero logging, guaranteed privacy, or subscription entitlement.
 
-#### What's Logged
+## Reporting
 
-`~/.claude/claude-switch.log` contains:
-- Timestamp
-- Provider and model used
-- Session duration
-- Exit codes
+Report vulnerabilities through GitHub's private vulnerability reporting feature if enabled for this repository. Otherwise contact the maintainer through a private channel listed on their GitHub profile. Do not post secrets or exploit details publicly. Include the affected file/version, impact, and safe reproduction steps.
 
-**NOT logged:**
-- API keys
-- Code content
-- User prompts or AI responses
-- Personal information
-
-#### Log Security
-
-```bash
-# Check log permissions (should be 600)
-ls -l ~/.claude/claude-switch.log
-
-# Clear logs
-> ~/.claude/claude-switch.log
-
-# Disable logging (edit scripts)
-# Comment out logging lines in claude-switch
-```
-
-### Provider Security
-
-#### Anthropic Direct
-- Official API, encrypted HTTPS
-- Keys stored in your environment only
-- Full Anthropic security guarantees
-
-#### GitHub Copilot (via copilot-api)
-- **Third-party proxy** (not official GitHub tool)
-- Local OAuth token storage
-- See [Risk Disclosure](README.md#-risk-disclosure) in README
-
-#### Ollama Local
-- 100% offline, no internet required
-- Code never leaves your machine
-- No cloud provider risks
-
-### Threat Model
-
-#### Risks We Mitigate
-- ✅ API key leakage to logs
-- ✅ Credential storage in scripts
-- ✅ Unencrypted transmission (all providers use HTTPS/local)
-
-#### Risks Outside Our Control
-- ⚠️ GitHub Copilot ToS compliance (see [Risk Disclosure](README.md#-risk-disclosure))
-- ⚠️ copilot-api proxy security (third-party dependency)
-- ⚠️ Provider-side data handling (Anthropic, GitHub, Ollama)
-
-### Known Issues
-
-#### copilot-api Reserved Header Issue (#174)
-
-**Status**: Mitigated with community patch
-
-**Issue**: copilot-api sends reserved billing headers causing connection failures
-
-**Fix**: Community patch applied automatically during `install.sh`
-
-**Details**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#patch-communautaire-solution-avancée)
-
-**Verify patch**:
-```bash
-grep -A 3 'x-copilot-billing-type' ~/.copilot-api/node_modules/copilot-api/dist/index.mjs
-# Should NOT see "x-copilot-billing-type" header
-```
-
-## Reporting a Vulnerability
-
-### What to Report
-
-**Security vulnerabilities** (report privately):
-- Credential leakage
-- Code execution risks
-- Privilege escalation
-- Data exfiltration
-
-**General bugs** (use public issues):
-- Provider routing failures
-- Configuration errors
-- Documentation issues
-
-### How to Report
-
-**Private reporting:**
-1. **Email**: florian@bruniaux.com
-2. **Subject**: `[SECURITY] cc-copilot-bridge: Brief description`
-3. **Include**:
-   - Vulnerability description
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if known)
-
-**Response time:**
-- Acknowledgment: 48 hours
-- Fix timeline: Depends on severity (critical: 7 days, high: 14 days, medium: 30 days)
-
-### Disclosure Policy
-
-1. **Report received** → Private acknowledgment
-2. **Fix developed** → Private testing
-3. **Fix released** → Public disclosure after 90 days OR after fix deployment (whichever is sooner)
-4. **Credit** → Reporter credited in CHANGELOG (unless anonymity requested)
-
-## Security Best Practices
-
-### For Users
-
-1. **Protect API keys**:
-   ```bash
-   # Store in secure environment files
-   echo "ANTHROPIC_API_KEY=sk-..." >> ~/.zshrc.local
-   chmod 600 ~/.zshrc.local
-   ```
-
-2. **Audit logs regularly**:
-   ```bash
-   tail -n 100 ~/.claude/claude-switch.log
-   ```
-
-3. **Use Ollama for sensitive code**:
-   ```bash
-   cco  # 100% offline, no cloud exposure
-   ```
-
-4. **Review copilot-api patches**:
-   ```bash
-   cd ~/.copilot-api
-   git log --oneline
-   ```
-
-### For Contributors
-
-1. **Never commit credentials** (use `.gitignore`)
-2. **Validate user inputs** in scripts
-3. **Use secure temp files**: `mktemp -t cc-copilot-bridge`
-4. **Test with realistic threat scenarios**
-
-## Compliance
-
-### GDPR / Privacy Laws
-
-**cc-copilot-bridge is a local routing tool:**
-- No data collection
-- No analytics or tracking
-- No cloud storage
-
-**Provider compliance:**
-- Anthropic: [Privacy Policy](https://www.anthropic.com/privacy)
-- GitHub: [Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement)
-- Ollama: Local only, no cloud
-
-### SOC 2 / Enterprise
-
-For enterprise deployments:
-- Use **Anthropic Direct** (`ccd`) for SOC 2 compliance
-- Use **Ollama** (`cco`) for air-gapped environments
-- Avoid **Copilot Bridge** (`ccc`) if ToS risk is unacceptable
-
-## Security Updates
-
-**Subscribe to releases**: [GitHub Releases](https://github.com/FlorianBruniaux/cc-copilot-bridge/releases)
-
-**Check for updates**:
-```bash
-cd ~/.claude/cc-copilot-bridge
-git fetch
-git log HEAD..origin/main --oneline
-```
-
-## Contact
-
-- **Security issues**: florian@bruniaux.com (private)
-- **General issues**: [GitHub Issues](https://github.com/FlorianBruniaux/cc-copilot-bridge/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/FlorianBruniaux/cc-copilot-bridge/discussions)
+This policy describes observable repository behavior; it is not a security audit or certification.
